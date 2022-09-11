@@ -1,6 +1,6 @@
 import numpy as np
-from core import World, Agent, Landmark
-from scenario import BaseScenario
+from env.core import World, Agent, Landmark
+from env.scenario import BaseScenario
 
 
 class Scenario(BaseScenario):

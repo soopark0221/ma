@@ -4,19 +4,34 @@ import torch.nn.functional as F
 import numpy as np
 from torch.distributions import Categorical 
 from replay_buffer import ReplayBuffer
+from copy import deepcopy
+
+def soft_update(target, source, t):
+    for target_param, source_param in zip(target.parameters(),
+                                          source.parameters()):
+        target_param.data.copy_(
+            (1 - t) * target_param.data + t * source_param.data)
+
+
+def hard_update(target, source):
+    for target_param, source_param in zip(target.parameters(),
+                                          source.parameters()):
+        target_param.data.copy_(source_param.data)
 
 class Actor(nn.Module):
-    def __init__(self, obs_dim, hidden_size):
+    def __init__(self, obs_dim, act_dim, hidden_size):
         super().__init__()
         self.actor = nn.Sequential(
-            nn.Linear(obs_dim, hidden_size),
+            nn.Linear(obs_dim[0], hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
+            nn.Linear(hidden_size, act_dim)
         )        
     
-    def forward(self, obs, deterministic=False, with_logprob=True):
+    def forward(self, obs):
         x = self.actor(obs)
+        x = torch.tanh(x)
         return x
 
 class Critic(nn.Module):
@@ -36,30 +51,49 @@ class Critic(nn.Module):
         return x
 
 class MADDPG:
-    def __init__(self, obs_space, action_space, args, hidden_size=64):
-        #action_dim = action_space.shape[0]
-        act_dim = 1
-        obs_dim = obs_space[0][0]
-        self.critic = Critic(obs_dim, act_dim*len(obs_space), hidden_size=hidden_size)
-        self.actor = Actor(obs_dim, hidden_size=hidden_size)
+    def __init__(self, agent_n, obs_space, action_space, args, hidden_size=64):
+        self.total_obs_dim = np.sum([obs_space[i].shape for i in range(len(obs_space))])
+        self.total_act_dim = np.sum([action_space[i].n for i in range(len(action_space))])
+
+        self.current_agent = agent_n
+        self.act_dim = action_space[agent_n].n
+
+        self.critic = Critic(self.total_obs_dim, self.total_act_dim, hidden_size=hidden_size)
+        self.actor = Actor(obs_space[agent_n].shape, action_space[agent_n].n, hidden_size=hidden_size)
+        #self.critic_target = Critic(self.total_obs_dim, self.total_act_dim, hidden_size=hidden_size)
+        #self.actor_target = Actor(obs_space[agent_n].shape, action_space[agent_n].n, hidden_size=hidden_size)
+        self.critic_target = deepcopy(self.critic)
+        self.actor_target = deepcopy(self.actor)
+        
         self.replay_buffer = ReplayBuffer(1e6)
         self.alpha = 0.2
         self.gamma = 0.99
-        self.qf_criterion = nn.MSELoss()
-        self.vf_criterion = nn.MSELoss()
+        self.noise_scale = 0.1
+        self.tau = 0.01
+        self.critic_criterion = nn.MSELoss()
+        self.actor_criterion = nn.MSELoss()
+        self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=0.001)
+        self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=0.001)
+        self.train_step = 0
 
     def act(self, obs):
-        a = self.actor(obs)
-        
-        dist = Categorical(a)
-        action = dist.sample()
+        # obs obs_shape 
+        obs = obs.float()
+        a = self.actor(obs.unsqueeze(0)).squeeze(0)
+        a += self.noise_scale * torch.from_numpy(np.random.randn(*a.shape))
+        a = torch.clamp(a, -1.0, 1.0)
 
-        action_log_probs = dist.log_probs(action)
-        dist_entropy = dist.entropy().mean()
+        a = a.detach().numpy()
+        #dist = Categorical(a)
+        #action = dist.sample()
 
-        return action, action_log_probs
+        #action_log_probs = dist.log_probs(action)
+        #dist_entropy = dist.entropy().mean()
 
-    def evaluate_actions(self, obs, action):
+        return a
+
+    def evaluate_actions(self, obs):
+        obs = obs.float()
         a = self.actor(obs)
         dist = self.dist(a)
 
@@ -68,83 +102,83 @@ class MADDPG:
 
         return action, action_log_probs, dist_entropy
 
-    def experience(self, obs, act, rew, new_obs, done):
-        self.replay_buffer.add(obs, act, rew, new_obs, float(done))
+    def experience(self, obs, act, rew, next_obs):
+        self.replay_buffer.add(obs, act, rew, next_obs)
 
     def update(self, agents, batch_size):
+        # num_agent x size x batch
         obs_n = []
-        obs_next_n = []
+        next_obs_n = []
         act_n = []
-        rew_n = []
-        for i in range(len(agents)):
-            obs, acts, rew, next_obs, d = agents[i].replay_buffer.sample(batch_size)
-            obs_n.append(obs)
-            obs_next_n.append(next_obs)
-            act_n.append(act)
-            rew_n.append(rew)
+        current_r = []
+        for i, agent in enumerate(agents):
+            o, a, r, no = agents[i].replay_buffer.sample(batch_size) # different idx for each agent
+            if i == self.current_agent:
+                current_r = r
+            obs_n.append(torch.tensor(o))
+            next_obs_n.append(torch.tensor(no))
+            act_n.append(torch.tensor(a))
+
+
+        ### compute Q loss
+        all_act = []
+        tensor_next_obs_n = [[] for _ in range(len(agents))]
+        for i, agent in enumerate(agents):
+            tensor_next_obs_n[i] = next_obs_n[i].transpose(0,1).contiguous() # batch_size x size
+            all_act.append(agent.actor_target(tensor_next_obs_n[i].float()))
+        all_act = torch.stack(all_act, dim=1) # batch_size x num_agent x size        
+        all_act = all_act.view(batch_size, -1) # batch_size x (num_agent x size)   
         
-        obs, act, rew, obs_next, done = self.replay_buffer.sample(batch_size)
-        rew = np.expand_dims(rew, axis=-1)
-        d = np.expand_dims(done, axis=-1)        
-        # compute pi loss
-        action, action_log_probs = self.act(obs_n)
-        q_new_actions = self.critic(obs_n, action)   
-        policy_loss = (self.alpha * action_log_probs - q_new_actions).mean()
+        # obs
+        tensor_obs_n = torch.tensor(np.vstack(obs_n)) # (num_agent x size) x batch_size
+        tensor_obs_n = tensor_obs_n.transpose(0,1).contiguous() # batch_size x (num_agent x size)
 
-        # compute Q loss
-        q_pred = self.critic(obs_n, action_n)
-        next_action, next_action_log_probs = self.actor(obs_next_n)
-        target_q_values = self.critic(obs_next_n, next_action) - next_action_log_probs
-        q_target = rew_n + self.gamma * (1 - d) * (target_q_values - self.alpha * next_action_log_probs)
-        q_loss = self.qf_criterion(q_pred, q_target.detach())
+        tensor_act_n = torch.tensor(np.vstack(act_n))
+        tensor_act_n = tensor_act_n.transpose(0,1).contiguous()
 
-        self.policy_optimizer.zero_grad()
-        policy_loss.backward()
-        self.policy_optimizer.step()
+        # next obs
+        next_obs_n = torch.tensor(np.vstack(next_obs_n)) # batch_size x (num_agent x size)
+        next_obs_n =  next_obs_n.transpose(0,1).contiguous()
+        # target Q 
+        target_Q = self.critic_target(next_obs_n.float(), all_act.float())
+        y = torch.tensor(current_r).unsqueeze(1) + self.gamma * target_Q 
+        # current Q
+        Q_val = self.critic(tensor_obs_n.float(), tensor_act_n.view(batch_size, -1))  # batch_size x size
 
-        self.q_optimizer.zero_grad()
-        q_loss.backward()
-        self.q_optimizer.step()
+        critic_loss = self.critic_criterion(target_Q, Q_val)
+
+        ### compute policy loss  
+        current_act = self.actor(obs_n[self.current_agent].transpose(0,1).float()) # batch_size x size
+        act_n[self.current_agent] = current_act.transpose(0,1).detach()
+        act_n = torch.tensor(np.vstack(act_n)) 
+        act_n = act_n.transpose(0,1).contiguous()  # batch_size x (num_agent x size)
+        actor_loss = -self.critic(tensor_obs_n.float(), act_n.float()).mean()        
+
+        self.actor_optim.zero_grad()
+        actor_loss.backward()
+        self.actor_optim.step()
+
+        self.critic_optim.zero_grad()
+        critic_loss.backward()
+        self.critic_optim.step()
         
 
+        # update
+        soft_update(self.critic_target, self.critic, self.tau)
+        soft_update(self.actor_target, self.actor, self.tau)
 
-# From Spinningup
-class SquashedGaussianMLPActor(nn.Module):
+        self.train_step += 1
 
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_limit):
-        super().__init__()
-        self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
-        self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
-        self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
-        self.act_limit = act_limit
+        #if self.train_step > 0 and self.train_step % 100 == 0:
+        #    self.save_model(self.train_step)
 
-    def forward(self, obs, deterministic=False, with_logprob=True):
-        net_out = self.net(obs)
-        mu = self.mu_layer(net_out)
-        log_std = self.log_std_layer(net_out)
-        log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
-        std = torch.exp(log_std)
-
-        # Pre-squash distribution and sample
-        pi_distribution = Normal(mu, std)
-        if deterministic:
-            # Only used for evaluating policy at test time.
-            pi_action = mu
-        else:
-            pi_action = pi_distribution.rsample()
-
-        if with_logprob:
-            # Compute logprob from Gaussian, and then apply correction for Tanh squashing.
-            # NOTE: The correction formula is a little bit magic. To get an understanding 
-            # of where it comes from, check out the original SAC paper (arXiv 1801.01290) 
-            # and look in appendix C. This is a more numerically-stable equivalent to Eq 21.
-            # Try deriving it yourself as a (very difficult) exercise. :)
-            logp_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
-            logp_pi -= (2*(np.log(2) - pi_action - F.softplus(-2*pi_action))).sum(axis=1)
-        else:
-            logp_pi = None
-
-        pi_action = torch.tanh(pi_action)
-        pi_action = self.act_limit * pi_action
-
-        return pi_action, logp_pi
+    def save_model(self, train_step):
+        num = str(train_step // 100)
+        model_path = os.path.join(self.scenario_name)
+        if not os.path.exists(model_path):
+            os.makedirs(model_path)
+        model_path = os.path.join(model_path, 'agent_%d' % self.agent_id)
+        if not os.path.exists(model_path):
+            os.makedirs(model_path)
+        torch.save(self.actor.state_dict(), model_path + '/' + num + '_actor_params.pkl')
+        torch.save(self.critic.state_dict(),  model_path + '/' + num + '_critic_params.pkl')
