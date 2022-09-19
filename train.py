@@ -36,7 +36,6 @@ def train(args):
     obs_space = env.observation_space
     action_space = env.action_space
     num_adv = args.num_adversaries
-    num_episodes = args.num_episodes
     batch_size = args.batch_size
     train_steps_per_episode = args.train_steps_per_episode
     # get initial obs
@@ -48,7 +47,7 @@ def train(args):
     path_length = 0
     episode_rewards = [0.0]  # sum of rewards for all agents
     agent_rewards = [[0.0] for _ in range(env.n)]  # individual agent reward
-    for n in range(num_steps):
+    for n in range(args.num_steps):
         #print(f'Episode {n} begins')
         action_n = [agent.act(torch.tensor(o)) for agent, o in zip(trainers, obs_n)]
         next_obs_n, rew_n, done_n, info_n = env.step(action_n)
@@ -90,9 +89,8 @@ if __name__ == '__main__':
     parser.add_argument("--num_adversaries", type=int, default=0, help="number of adversaries")
     parser.add_argument("--batch_size", type=int, default=128, help="number of episodes to optimize at the same time")
     parser.add_argument("--train_steps_per_episode", type=int, default=100)
-    parser.add_argument("--num_steps", type=int, default=100000)
+    parser.add_argument("--num_steps", type=int, default=10000000)
     parser.add_argument("--max_path_length", type=int, default=50)
-    parser.add_argument("--num_steps", type=int, default=1000)
     parser.add_argument("--evaluate_freq", type=int, default=100)
 
     args = parser.parse_args()
