@@ -36,7 +36,6 @@ def train(args):
     obs_space = env.observation_space
     action_space = env.action_space
     num_adv = args.num_adversaries
-    num_episodes = args.num_episodes
     batch_size = args.batch_size
     train_steps_per_episode = args.train_steps_per_episode
     # get initial obs
@@ -48,7 +47,7 @@ def train(args):
     path_length = 0
     episode_rewards = [0.0]  # sum of rewards for all agents
     agent_rewards = [[0.0] for _ in range(env.n)]  # individual agent reward
-    for n in range(num_steps):
+    for n in range(args.num_steps):
         #print(f'Episode {n} begins')
         action_n = [agent.act(torch.tensor(o)) for agent, o in zip(trainers, obs_n)]
         next_obs_n, rew_n, done_n, info_n = env.step(action_n)
@@ -68,9 +67,18 @@ def train(args):
             for a in agent_rewards:
                 a.append(0)
         # update
-        for i, agent in enumerate(trainers):
-            current_agent = i
-            agent.update(trainers, batch_size)
+        if n >= batch_size: 
+            for i, agent in enumerate(trainers):
+                current_agent = i
+                agent.update(trainers, batch_size)
+
+        if n % args.collect_freq == 0:
+            for i, agent in enumerate(trainers):
+                agent.collect_params()
+
+        if n % args.sample_freq == 0:
+            for i, agent in enumerate(trainers):
+                agent.sample_params()
 
         # save model, display training output
         if (done or terminal) and len(episode_rewards) % args.evaluate_freq == 0:  # every time this many episodes are complete
@@ -90,10 +98,11 @@ if __name__ == '__main__':
     parser.add_argument("--num_adversaries", type=int, default=0, help="number of adversaries")
     parser.add_argument("--batch_size", type=int, default=128, help="number of episodes to optimize at the same time")
     parser.add_argument("--train_steps_per_episode", type=int, default=100)
-    parser.add_argument("--num_steps", type=int, default=100000)
+    parser.add_argument("--num_steps", type=int, default=1000000)
     parser.add_argument("--max_path_length", type=int, default=50)
-    parser.add_argument("--num_steps", type=int, default=1000)
     parser.add_argument("--evaluate_freq", type=int, default=100)
+    parser.add_argument("--collect_freq", type=int, default=100)
+    parser.add_argument("--sample_freq", type=int, default=5000)
 
     args = parser.parse_args()
     train(args)

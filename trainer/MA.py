@@ -5,6 +5,7 @@ import numpy as np
 from torch.distributions import Categorical 
 from replay_buffer import ReplayBuffer
 from copy import deepcopy
+from swag import SWAG
 
 def soft_update(target, source, t):
     for target_param, source_param in zip(target.parameters(),
@@ -76,6 +77,8 @@ class MADDPG:
         self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=0.001)
         self.train_step = 0
 
+        self.swag_model = SWAG(self.critic)
+    
     def act(self, obs):
         # obs obs_shape 
         obs = obs.float()
@@ -182,3 +185,10 @@ class MADDPG:
             os.makedirs(model_path)
         torch.save(self.actor.state_dict(), model_path + '/' + num + '_actor_params.pkl')
         torch.save(self.critic.state_dict(),  model_path + '/' + num + '_critic_params.pkl')
+
+
+    def collect_params(self):
+        self.swag_model.collect_model(self.critic)
+
+    def sample_params(self):
+        self.swag_model.sample()
