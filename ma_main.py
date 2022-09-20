@@ -9,9 +9,9 @@ from trainer.bootmaddpg import BootMADDPG
 from trainer.MA import SWAGMA
 from trainer.swag import SWAG
 
-from algo.normalized_env import ActionNormalizedEnv, ObsEnv, reward_from_state
+from trainer.normalized_env import ActionNormalizedEnv, ObsEnv, reward_from_state
 
-from algo.utils import *
+from trainer.utils import *
 from copy import deepcopy
 
 def get_trainers(env, num_adversaries, obs_space, action_space, args):
@@ -44,17 +44,20 @@ def main(args):
         obs_space=env.observation_space
         action_space=env.action_space
         batch_size=args.batch_size
-        steps_before_train=10000 # XXX: arbitrary, make args
+        steps_before_train=10000 # XXX: arbitrary value instead of an argument
 
-        model=get_trainers(env,num_adv,obs_space,action_space,args)
+        model=get_trainers(env, num_adv, obs_space, action_space, args)
 
         # train
         path_length = 0
         episode_rewards = [0.0]  # sum of rewards for all agents
         agent_rewards = [[0.0] for _ in range(env.n)]  # individual agent reward
         for n in range(args.max_steps):
-            #print(f'Episode {n} begins')
+            
+            obs_n = env.reset()
+
             action_n = [agent.act(torch.tensor(o)) for agent, o in zip(model, obs_n)]
+            action_n=torch.tensor(action_n).data.cpu().numpy()
             next_obs_n, rew_n, done_n, info_n = env.step(action_n)
             done = all(done_n)
             for i, agent in enumerate(model):
@@ -65,7 +68,7 @@ def main(args):
             obs_n = next_obs_n
             terminal = (path_length >= args.perepisode_length)
             if done or terminal:
-                print(f"saving this episode's reward...")
+                print(f"end of episode, total step: {n}")
                 obs_n = env.reset()
                 path_length = 0
                 episode_rewards.append(0)
@@ -203,9 +206,10 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--scenario', default="simple_tag", type=str)
-    parser.add_argument('--max_steps', default=1e6, type=int)
+    parser.add_argument('--max_steps', default=int(1e6), type=int)
     parser.add_argument('--algo', default="bootmaddpg", type=str, help="maddpg/bootmaddpg")
     parser.add_argument('--mode', default="train", type=str, help="train/eval")
+    parser.add_argument('--num_adv', type=int, default=3)
     parser.add_argument('--perepisode_length', default=100, type=int)
     parser.add_argument('--memory_length', default=int(5*1e5), type=int)
     parser.add_argument('--tau', default=0.001, type=float)

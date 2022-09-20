@@ -1,38 +1,27 @@
 import argparse
-from trainer.MA import MADDPG
+from trainer.MA import SWAGMA
 import numpy as np
 from env.environment import MultiAgentEnv
 from env import simple_tag
 import torch
 import os
 import imp
-
-def load(name):
-    list_path = [os.getcwd(),'env', name]
-    pathname = os.path.join(*list_path)
-    print(pathname)
-    return imp.load_source('', pathname)
-
-def make_env(scenario_name, args):
-    scenario = load(scenario_name + ".py").Scenario()
-    #scenario = simple_tag.Scenario()
-    world = scenario.make_world()
-    env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation)
-    return env
+from env import make_env
 
 def get_trainers(env, num_adversaries, obs_space, action_space, args):
     trainers = []
     for i in range(num_adversaries):
-        trainers.append(MADDPG(i, obs_space, action_space, args))
+        trainers.append(SWAGMA(i, obs_space, action_space, args))
     for i in range(num_adversaries, env.n):
-        trainers.append(MADDPG(i, obs_space, action_space, args))
+        trainers.append(SWAGMA(i, obs_space, action_space, args))
     return trainers
 
 
 
 
 def train(args):
-    env = make_env(args.scenario, args)
+    
+    env = make_env(args.scenario)
     obs_space = env.observation_space
     action_space = env.action_space
     num_adv = args.num_adversaries
