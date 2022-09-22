@@ -51,6 +51,7 @@ class BootMADDPG:
 
         self.GAMMA = 0.95
         self.tau = 0.01
+        self.noise_scale=0.1
 
         self.var = [1.0 for i in range(n_agents)]
 
@@ -196,7 +197,7 @@ class BootMADDPG:
             sb = obs[i].detach()
             act = self.actors[i](sb.unsqueeze(0)).squeeze()
             if noisy:
-                act += torch.from_numpy(np.random.randn(2) * self.var[i]).type(FloatTensor)
+                act += self.noise_scale*torch.from_numpy(np.random.randn(self.n_actions) * self.var[i]).type(FloatTensor)
 
                 if self.episode_done > self.episodes_before_train and \
                         self.var[i] > 0.05:

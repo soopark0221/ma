@@ -27,12 +27,6 @@ def main(args):
 
     env = make_env(args.scenario)
     
-    n_agents = env.n
-    n_actions = env.world.dim_p
-    # env = ActionNormalizedEnv(env)
-    # env = ObsEnv(env)
-    n_states = env.observation_space[0].shape[0]
-    
     torch.manual_seed(args.seed)
 
     if args.tensorboard and args.mode == "train":
@@ -75,7 +69,7 @@ def main(args):
                 for a in agent_rewards:
                     a.append(0)
             # update
-            if n > steps_before_train:
+            if n > args.steps_before_train:
                 if n >= batch_size: 
                     for i, agent in enumerate(model):
                         current_agent = i
@@ -102,6 +96,14 @@ def main(args):
 
 
     else:
+
+        n_agents = env.n
+        n_actions = env.world.dim_p*2+1 
+        # XXX: from environment.py, discrete action space
+        
+        # env = ActionNormalizedEnv(env)
+        # env = ObsEnv(env)
+        n_states = env.observation_space[0].shape[0]
         if args.algo == "maddpg":
             model = MADDPG(n_states, n_actions, n_agents, args)
 
@@ -207,7 +209,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--scenario', default="simple_tag", type=str)
     parser.add_argument('--max_steps', default=int(1e6), type=int)
-    parser.add_argument('--algo', default="bootmaddpg", type=str, help="maddpg/bootmaddpg")
+    parser.add_argument('--algo', default="bootmaddpg", type=str, help="maddpg/bootmaddpg/swagma")
     parser.add_argument('--mode', default="train", type=str, help="train/eval")
     parser.add_argument('--num_adv', type=int, default=3)
     parser.add_argument('--perepisode_length', default=100, type=int)
@@ -218,7 +220,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_ensemble',default=5, type=int)
     parser.add_argument('--a_lr', default=0.001, type=float)
     parser.add_argument('--c_lr', default=0.001, type=float)
-    parser.add_argument('--batch_size', default=256, type=int) # XXX
+    parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--render_flag', default=False, type=bool)
     parser.add_argument('--ou_theta', default=0.15, type=float)
     parser.add_argument('--ou_mu', default=0.0, type=float)
@@ -228,6 +230,7 @@ if __name__ == '__main__':
     parser.add_argument("--save_interval", default=10000, type=int)
     parser.add_argument("--model_episode", default=100000, type=int)
     parser.add_argument('--episode_before_train', default=200, type=int)
+    parser.add_argument('--steps_before_train', default=10000, type=int, help="for swagma, start update after this number of steps")
     parser.add_argument("--evaluate_freq", type=int, default=100)
     parser.add_argument("--collect_freq", type=int, default=500)
     parser.add_argument("--sample_freq", type=int, default=5000)

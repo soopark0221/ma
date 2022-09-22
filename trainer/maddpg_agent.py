@@ -32,7 +32,6 @@ class MADDPG:
         self.actors = []
         self.critics = []
         self.actors = [Actor_MA(dim_obs, dim_act) for _ in range(n_agents)]
-        # self.critic = Critic(n_agents, dim_obs, dim_act)
         self.critics = [Critic_MA(n_agents, dim_obs, dim_act) for _ in range(n_agents)]
 
         self.n_agents = n_agents
@@ -49,6 +48,7 @@ class MADDPG:
 
         self.GAMMA = 0.95
         self.tau = 0.01
+        self.noise_scale=0.1
 
         self.var = [1.0 for i in range(n_agents)]
 
@@ -181,7 +181,7 @@ class MADDPG:
             sb = obs[i].detach()
             act = self.actors[i](sb.unsqueeze(0)).squeeze()
             if noisy:
-                act += torch.from_numpy(np.random.randn(2) * self.var[i]).type(FloatTensor)
+                act += self.noise_scale* torch.from_numpy(np.random.randn(self.n_actions) * self.var[i]).type(FloatTensor)
 
                 if self.episode_done > self.episodes_before_train and \
                         self.var[i] > 0.05:
