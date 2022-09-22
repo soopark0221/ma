@@ -26,7 +26,7 @@ def get_trainers(env, num_adversaries, obs_space, action_space, args):
 def main(args):
 
     env = make_env(args.scenario)
-    
+    print(f'Scenario {args.scenario}')
     torch.manual_seed(args.seed)
 
     if args.tensorboard and args.mode == "train":
@@ -62,7 +62,7 @@ def main(args):
             obs_n = next_obs_n
             terminal = (path_length >= args.perepisode_length)
             if done or terminal:
-                print(f"end of episode, total step: {n}")
+                #print(f"end of episode, total step: {n}")
                 obs_n = env.reset()
                 path_length = 0
                 episode_rewards.append(0)
@@ -86,7 +86,7 @@ def main(args):
             # save model, display training output
             if (done or terminal) and len(episode_rewards) % args.evaluate_freq == 0:  # every time this many episodes are complete
                 if num_adv == 0:
-                    print("steps: {}, episodes: {}, episode reward: {}, time: {}".format(
+                    print("steps: {}, episodes: {}, episode reward: {}".format(
                         n, len(episode_rewards), np.mean(episode_rewards[-args.evaluate_freq:])))
                 else:
                     print("steps: {}, episodes: {}, mean episode reward: {}, agent episode reward: {}".format(
