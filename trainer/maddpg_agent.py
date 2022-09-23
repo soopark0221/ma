@@ -9,8 +9,11 @@ import os
 import torch.nn as nn
 import numpy as np
 from trainer.utils import device
+from trainer.swag import SWAG
+
 scale_reward = 0.01
 
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
 def soft_update(target, source, t):
     for target_param, source_param in zip(target.parameters(),
@@ -56,6 +59,7 @@ class MADDPG:
                                       args.c_lr) for x in self.critics]
         self.actor_optimizer = [Adam(x.parameters(),
                                      args.a_lr) for x in self.actors]
+        self.swag_model = [SWAG(cr) for cr in self.critics]
 
         if self.use_cuda:
             for x in self.actors:
@@ -191,3 +195,11 @@ class MADDPG:
             actions[i, :] = act
         self.steps_done += 1
         return actions.data.cpu().numpy()
+
+    def collect_params(self):
+        for agent in range(self.n_agents):
+            self.swag_model[agent].collect_model(self.critics[agent])
+
+    def sample_params(self):
+        for agent in range(self.n_agents):
+            self.swag_model[agent].sample()

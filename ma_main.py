@@ -89,7 +89,7 @@ def main(args):
                 agent_episode_reward = [np.sum(rew[-args.evaluate_freq:]) for rew in agent_rewards]
                 if num_adv > 0 :
                     adv_episode_reward = np.sum(agent_episode_reward[:num_adv])
-                    ag_episode_reward = np.sum(agent_episode_reward[num_adv-1:])
+                    ag_episode_reward = np.sum(agent_episode_reward[-1])
                 else:
                     adv_episode_reward = 0
                     ag_episode_reward = np.sum(agent_episode_reward)
@@ -118,7 +118,7 @@ def main(args):
         # env = ActionNormalizedEnv(env)
         # env = ObsEnv(env)
         n_states = env.observation_space[0].shape[0]
-        if args.algo == "maddpg":
+        if args.algo == "maddpg" or args.algo == 'swag_maddpg':
             model = MADDPG(n_states, n_actions, n_agents, args)
 
         if args.algo == "bootmaddpg":
@@ -155,7 +155,7 @@ def main(args):
                     accum_reward += np.sum(reward)
                     if args.num_adv > 0:
                         adv_epi_reward += np.sum(reward[0:args.num_adv])   # XXX: for num_adv=3
-                        agent_epi_reward += reward[args.num_adv-1:]
+                        agent_epi_reward += reward[-1]
                     else:
                         agent_epi_reward += np.sum(reward)
 
@@ -176,7 +176,7 @@ def main(args):
 
                     if args.perepisode_length < step or (True in done):
                         c_loss, a_loss = model.update(episode)  # XXX: update per episode or step?
-                        print("[Episode %05d] reward %6.4f" % (episode, accum_reward))
+                        print("[Episode %05d] reward %6.4f adv_reward %6.4f agent_reward %6.4f" % (episode, accum_reward, adv_epi_reward, agent_epi_reward))
                         
                         if args.tensorboard:
                             writer.add_scalar(tag='agent/total_reward', global_step=episode, scalar_value=accum_reward)
@@ -217,6 +217,12 @@ def main(args):
                         print("[Episode %05d] reward %6.4f " % (episode, accum_reward))
                         env.reset()
                         break
+            
+            if args.algo == 'swag_maddpg':
+                if episode % args.collect_freq == 0:
+                    model.collect_params()
+                if episode % args.sample_freq == 0:
+                    model.sample_params()
 
     if args.tensorboard:
         writer.close()
@@ -248,8 +254,8 @@ if __name__ == '__main__':
     parser.add_argument("--model_episode", default=100000, type=int)
     parser.add_argument('--episode_before_train', default=200, type=int)
     parser.add_argument('--steps_before_train', default=10000, type=int, help="for swagma, start update after this number of steps")
-    parser.add_argument("--evaluate_freq", type=int, default=100)
-    parser.add_argument("--collect_freq", type=int, default=500)
+    parser.add_argument("--evaluate_freq", type=int, default=10)
+    parser.add_argument("--collect_freq", type=int, default=100)
     parser.add_argument("--sample_freq", type=int, default=5000)
     parser.add_argument('--log_dir', default=datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))
 
