@@ -32,7 +32,6 @@ class SWAGMA:
         self.tau=args.tau
         self.gamma=args.gamma
         self.batch_size=args.batch_size
-        
 
         self.critic = Critic(self.total_obs_dim, self.total_act_dim, hidden_size=hidden_size)
         self.actor = Actor(obs_space[agent_n].shape, action_space[agent_n].n, hidden_size=hidden_size)
@@ -51,15 +50,23 @@ class SWAGMA:
         self.train_step = 0
 
         self.swag_model = SWAG(self.critic)
+
+        # change to cuda
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.actor.to(self.device)
+        self.critic.to(self.device)
+        self.actor_target.to(self.device)
+        self.critic_target.to(self.device)
+
     
     def act(self, obs):
         # obs obs_shape 
-        obs = obs.float()
+        obs = obs.float().to(self.device)
         a = self.actor(obs.unsqueeze(0)).squeeze(0)
-        a += self.noise_scale * torch.from_numpy(np.random.randn(*a.shape))
+        a += self.noise_scale * torch.from_numpy(np.random.randn(*a.shape)).to(self.device)
         a = torch.clamp(a, -1.0, 1.0)
 
-        a = a.detach().numpy()
+        a = a.detach().cpu().numpy()
         #dist = Categorical(a)
         #action = dist.sample()
 
@@ -100,33 +107,34 @@ class SWAGMA:
         all_act = []
         tensor_next_obs_n = [[] for _ in range(len(agents))]
         for i, agent in enumerate(agents):
-            tensor_next_obs_n[i] = next_obs_n[i].transpose(0,1).contiguous() # batch_size x size
+            tensor_next_obs_n[i] = next_obs_n[i].transpose(0,1).contiguous().to(self.device) # batch_size x size
             all_act.append(agent.actor_target(tensor_next_obs_n[i].float()))
-        all_act = torch.stack(all_act, dim=1) # batch_size x num_agent x size        
+        all_act = torch.stack(all_act, dim=1).to(self.device) # batch_size x num_agent x size        
         all_act = all_act.view(self.batch_size, -1) # batch_size x (num_agent x size)   
         
         # obs
-        tensor_obs_n = torch.tensor(np.vstack(obs_n)) # (num_agent x size) x batch_size
+        tensor_obs_n = torch.tensor(np.vstack(obs_n)).to(self.device) # (num_agent x size) x batch_size
         tensor_obs_n = tensor_obs_n.transpose(0,1).contiguous() # batch_size x (num_agent x size)
 
-        tensor_act_n = torch.tensor(np.vstack(act_n))
+        tensor_act_n = torch.tensor(np.vstack(act_n)).to(self.device)
         tensor_act_n = tensor_act_n.transpose(0,1).contiguous()
 
         # next obs
-        next_obs_n = torch.tensor(np.vstack(next_obs_n)) # batch_size x (num_agent x size)
+        next_obs_n = torch.tensor(np.vstack(next_obs_n)).to(self.device) # batch_size x (num_agent x size)
         next_obs_n =  next_obs_n.transpose(0,1).contiguous()
         # target Q 
         target_Q = self.critic_target(next_obs_n.float(), all_act.float())
-        y = torch.tensor(current_r).unsqueeze(1) + self.gamma * target_Q 
+        y = torch.tensor(current_r).to(self.device).unsqueeze(1) + self.gamma * target_Q 
         # current Q
         Q_val = self.critic(tensor_obs_n.float(), tensor_act_n.view(self.batch_size, -1))  # batch_size x size
 
         critic_loss = self.critic_criterion(target_Q, Q_val)
 
         ### compute policy loss  
-        current_act = self.actor(obs_n[self.current_agent].transpose(0,1).float()) # batch_size x size
-        act_n[self.current_agent] = current_act.transpose(0,1).detach()
-        act_n = torch.tensor(np.vstack(act_n)) 
+        current_act = self.actor(obs_n[self.current_agent].transpose(0,1).type(torch.FloatTensor).to(self.device)) # batch_size x size
+        act_n[self.current_agent] = current_act.to('cpu').transpose(0,1).detach()
+        act_n = torch.vstack(act_n).to(self.device)
+        #act_n = torch.tensor(np.vstack(act_n)) 
         act_n = act_n.transpose(0,1).contiguous()  # batch_size x (num_agent x size)
         actor_loss = -self.critic(tensor_obs_n.float(), act_n.float()).mean()        
 
