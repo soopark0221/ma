@@ -30,7 +30,7 @@ def main(args):
     torch.manual_seed(args.seed)
 
     if args.tensorboard and args.mode == "train":
-        writer = SummaryWriter(log_dir='runs/' + args.algo + "/" + args.log_dir)
+        writer = SummaryWriter(log_dir='runs/' + args.algo + "/" + args.log_dir+args.scenario+"_seed"+str(args.seed))
     
     if args.algo == "swagma":
 
@@ -38,7 +38,6 @@ def main(args):
         obs_space=env.observation_space
         action_space=env.action_space
         batch_size=args.batch_size
-        steps_before_train=10000 # XXX: arbitrary value instead of an argument
 
         model=get_trainers(env, num_adv, obs_space, action_space, args)
 
@@ -168,8 +167,10 @@ def main(args):
                             writer.add_scalar(tag='agent/agent_reward', global_step=episode, scalar_value=agent_epi_reward)
                         
                             if c_loss and a_loss:
-                                writer.add_scalars('agent/loss', global_step=episode,
-                                                tag_scalar_dict={'actor': a_loss, 'critic': c_loss})
+                                writer.add_scalar('agent/actor_loss', global_step=episode,
+                                                scalar_value= a_loss)
+                                writer.add_scalar('agent/critic_loss', global_step=episode,
+                                                scalar_value= c_loss)                
 
                         if c_loss and a_loss:
                             print(" a_loss %3.4f c_loss %3.4f" % (a_loss, c_loss), end='')
@@ -229,12 +230,12 @@ if __name__ == '__main__':
     parser.add_argument('--tensorboard', default=True, action="store_true")
     parser.add_argument("--save_interval", default=10000, type=int)
     parser.add_argument("--model_episode", default=100000, type=int)
-    parser.add_argument('--episode_before_train', default=200, type=int)
+    parser.add_argument('--episode_before_train', default=100, type=int)
     parser.add_argument('--steps_before_train', default=10000, type=int, help="for swagma, start update after this number of steps")
     parser.add_argument("--evaluate_freq", type=int, default=100)
     parser.add_argument("--collect_freq", type=int, default=500)
     parser.add_argument("--sample_freq", type=int, default=5000)
-    parser.add_argument('--log_dir', default=datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))
+    parser.add_argument('--log_dir', default=datetime.datetime.now().strftime('%m%d_%H%M'))
 
     args = parser.parse_args()
     main(args)
