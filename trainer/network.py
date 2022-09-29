@@ -78,10 +78,10 @@ class Actor_MA(nn.Module):
 class EnsembleCrt_MA(nn.Module):
 	def __init__(self, n_agent, obs_dim, action_dim, n_ensemble=5):
 		super().__init__()
-		self.n_agent=n_agent
-		self.obs_dim=obs_dim
-		self.act_dim=action_dim
-		self.n_ensemble=n_ensemble
+		# self.n_agent=n_agent
+		# self.obs_dim=obs_dim
+		# self.act_dim=action_dim
+		# self.n_ensemble=n_ensemble
 
 		self.ensemble=nn.ModuleList([Critic_MA(n_agent,obs_dim,action_dim) for _ in range(n_ensemble)])
 
@@ -91,6 +91,16 @@ class EnsembleCrt_MA(nn.Module):
 		else:
 			return self.ensemble[k](obs,act)
 	
-	@property
-	def ensemble_size(self):
-		return self.n_ensemble
+
+
+class EnsembleAct_MA(nn.Module):
+	def __init__(self, obs_dim, action_dim, n_ensemble=5):
+		super().__init__()
+		self.ensemble=nn.ModuleList([Actor_MA(obs_dim,action_dim) for _ in range(n_ensemble)])
+
+	def forward(self, obs, k=None):
+		if k is None:
+			return [net(obs) for net in self.ensemble]
+		else:
+			return self.ensemble[k](obs)
+	

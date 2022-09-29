@@ -3,8 +3,9 @@ import numpy as np
 import torch.nn as nn
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
 def to_torch(np_array):
     return torch.from_numpy(np_array)
