@@ -89,8 +89,12 @@ def main(args):
                     next_obs = None
                 rw_tensor = torch.FloatTensor(reward).to(device)
                 ac_tensor = torch.FloatTensor(action).to(device)
-
-                model.memory.push(obs.data, ac_tensor, next_obs, rw_tensor, model.epi_actors)
+                
+                if hasattr(model, 'epi_actors'):
+                    epi_actors=model.epi_actors
+                else:
+                    epi_actors=None
+                model.memory.push(obs.data, ac_tensor, next_obs, rw_tensor, epi_actors)
                 obs = next_obs
 
                 state = next_state
