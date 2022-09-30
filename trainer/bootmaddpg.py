@@ -2,7 +2,7 @@ from trainer.network import Critic_MA, Actor_MA, EnsembleCrt_MA, EnsembleAct_MA
 import torch
 from copy import deepcopy
 from torch.optim import Adam
-from trainer.memory import BootMemory, BootExp
+from trainer.memory import BootMemoryc, BootMemorya, BootExpc, BootExpa
 from trainer.random_process import OrnsteinUhlenbeckProcess
 from torch.autograd import Variable
 import os
@@ -44,7 +44,7 @@ class BootMADDPGc:
         self.actors_target = deepcopy(self.actors)
         self.critics_target = deepcopy(self.critics)
 
-        self.memory = BootMemory(args.memory_length)
+        self.memory = BootMemoryc(args.memory_length)
         self.batch_size = args.batch_size
         self.use_cuda = torch.cuda.is_available()
         self.episodes_before_train = args.episode_before_train
@@ -116,7 +116,7 @@ class BootMADDPGc:
         a_loss = []
 
         transitions = self.memory.sample(self.batch_size)
-        batch = BootExp(*zip(*transitions))
+        batch = BootExpc(*zip(*transitions))
 
         for agent in range(self.n_agents):
 
@@ -228,7 +228,7 @@ class BootMADDPGa:
         self.critics_target = deepcopy(self.critics)
         self.epi_actors=np.zeros(n_agents)
 
-        self.memory = BootMemory(args.memory_length)
+        self.memory = BootMemorya(args.memory_length)
         self.batch_size = args.batch_size
         self.use_cuda = torch.cuda.is_available()
         self.episodes_before_train = args.episode_before_train
@@ -295,12 +295,13 @@ class BootMADDPGa:
 
         BoolTensor = torch.cuda.BoolTensor if self.use_cuda else torch.BoolTensor
         FloatTensor = torch.cuda.FloatTensor if self.use_cuda else torch.FloatTensor
+        IntTensor= torch.cuda.IntTensor if self.use_cuda else torch.IntTensor
 
         c_loss = []
         a_loss = []
 
         transitions = self.memory.sample(self.batch_size)
-        batch = BootExp(*zip(*transitions))
+        batch = BootExpa(*zip(*transitions))
 
         for agent in range(self.n_agents):
 
@@ -311,6 +312,7 @@ class BootMADDPGa:
             action_batch = torch.stack(batch.actions).type(FloatTensor)
             reward_batch = torch.stack(batch.rewards).type(FloatTensor)
             mask_batch = torch.tensor(np.stack(batch.masks)).type(FloatTensor)
+            actor_batch= torch.tensor(np.stack(batch.actors)).type(IntTensor)
 
             non_final_next_states = torch.stack([s for s in batch.next_states if s is not None]).type(FloatTensor)
             whole_state = state_batch.view(self.batch_size, -1)
@@ -318,7 +320,7 @@ class BootMADDPGa:
 
             self.critic_optimizer[agent].zero_grad()
             current_Q = self.critics[agent](whole_state, whole_action)
-            non_final_next_actions = [self.actors_target[i](non_final_next_states[:, i,:],self.epi_actors[i]) for i in range(self.n_agents)]
+            non_final_next_actions=[torch.stack([self.actors_target[i](non_final_next_states[j,i,:], actor_batch[non_final_mask][j,i]) for j in range(len(non_final_next_states))]) for i in range(self.n_agents)]
             non_final_next_actions = torch.stack(non_final_next_actions)
             non_final_next_actions = (non_final_next_actions.transpose(0,1).contiguous())
             target_Q = torch.zeros(self.batch_size).type(FloatTensor)

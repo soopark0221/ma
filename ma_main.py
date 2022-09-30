@@ -43,7 +43,6 @@ def main(args):
         model = BootMADDPGa(n_states, n_actions, n_agents, args)
 
 
-    print(model)
     model.load_model()
 
     episode = 0
@@ -90,8 +89,8 @@ def main(args):
                     next_obs = None
                 rw_tensor = torch.FloatTensor(reward).to(device)
                 ac_tensor = torch.FloatTensor(action).to(device)
-                
-                model.memory.push(obs.data, ac_tensor, next_obs, rw_tensor)
+
+                model.memory.push(obs.data, ac_tensor, next_obs, rw_tensor, model.epi_actors)
                 obs = next_obs
 
                 state = next_state
