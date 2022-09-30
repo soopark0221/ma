@@ -351,11 +351,12 @@ class BootMADDPGa:
             for head in range(self.n_ensemble):
                 used=torch.sum(mask_batch[:,head])
                 if used>0.0:
-                    actor_loss=-self.critics[agent](whole_state, whole_action[i])
+                    actor_loss=-self.critics[agent](whole_state, whole_action[head])
                     actor_loss*=mask_batch[:,head].unsqueeze(1)
                     actor_loss=torch.sum(actor_loss/used)
                     total_aloss.append(actor_loss)
             if len(total_aloss)>0:
+                abs_aloss=sum([abs(ls) for ls in total_aloss])/float(self.n_ensemble)   # without abs, total_loss log is diluted
                 total_aloss=sum(total_aloss)/float(self.n_ensemble)
                 total_aloss.backward()
                 self.actor_optimizer[agent].step()
@@ -364,7 +365,7 @@ class BootMADDPGa:
             # torch.nn.utils.clip_grad_norm_(self.critics[agent].parameters(), 1)
 
             c_loss.append(loss_Q)
-            a_loss.append(total_aloss)
+            a_loss.append(abs_aloss)
 
         if self.train_num % 100 == 0:
             for i in range(self.n_agents):
