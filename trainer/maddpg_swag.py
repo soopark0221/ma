@@ -13,7 +13,7 @@ from trainer.swag import SWAG
 
 scale_reward = 0.01
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
 def soft_update(target, source, t):
     for target_param, source_param in zip(target.parameters(),
@@ -28,7 +28,7 @@ def hard_update(target, source):
         target_param.data.copy_(source_param.data)
 
 
-class MADDPG:
+class SWAGMADDPG:
     def __init__(self, dim_obs, dim_act, n_agents, args):
         self.args = args
         self.mode = args.mode
@@ -70,6 +70,8 @@ class MADDPG:
             for x in self.actors_target:
                 x.cuda()
             for x in self.critics_target:
+                x.cuda()
+            for x in self.actors_sample:
                 x.cuda()
 
         self.steps_done = 0
@@ -175,6 +177,7 @@ class MADDPG:
             for i in range(self.n_agents):
                 soft_update(self.critics_target[i], self.critics[i], self.tau)
                 soft_update(self.actors_target[i], self.actors[i], self.tau)
+                hard_update(self.actors_sample[i], self.actors[i])
 
         return sum(c_loss).item()/self.n_agents, sum(a_loss).item()/self.n_agents
 
@@ -184,7 +187,7 @@ class MADDPG:
         FloatTensor = torch.cuda.FloatTensor if self.use_cuda else torch.FloatTensor
         for i in range(self.n_agents):
             sb = obs[i].detach()
-            act = self.actors[i](sb.unsqueeze(0)).squeeze()
+            act = self.actors_sample[i](sb.unsqueeze(0)).squeeze()
             if noisy:
                 act += self.noise_scale* torch.from_numpy(np.random.randn(self.n_actions) * self.var[i]).type(FloatTensor)
 
@@ -199,8 +202,8 @@ class MADDPG:
 
     def collect_params(self):
         for agent in range(self.n_agents):
-            self.swag_model[agent].collect_model(self.critics[agent])
+            self.swag_model[agent].collect_model(self.actors[agent])
 
     def sample_params(self):
         for agent in range(self.n_agents):
-            self.swag_model[agent].sample()
+            self.swag_model[agent].sample(self.actors_sample[agent])
