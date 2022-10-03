@@ -198,7 +198,6 @@ def main(args):
 
         if args.algo == "bootmaddpg":
             model = BootMADDPG(n_states, n_actions, n_agents, args)
-
         model.load_model()
 
         episode = 0
@@ -245,7 +244,6 @@ def main(args):
                     obs = next_obs
 
                     state = next_state
-
 
                     if args.perepisode_length < step or (True in done):
                         c_loss, a_loss = model.update(episode)  # XXX: update per episode or step?
