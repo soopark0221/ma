@@ -169,7 +169,7 @@ if __name__ == '__main__':
     parser.add_argument('--gamma', default=0.95, type=float)
     parser.add_argument('--seed', default=777, type=int)
     parser.add_argument('--n_ensemble',default=5, type=int)
-    parser.add_argument('--a_lr', default=0.001, type=float)
+    parser.add_argument('--a_lr', default=0.0013, type=float)
     parser.add_argument('--c_lr', default=0.001, type=float)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--render_flag', default=False, type=bool)
