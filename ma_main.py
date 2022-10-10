@@ -183,6 +183,30 @@ def main(args):
                         # model.reset()
                         break
 
+                elif args.mode == "eval":
+                    model = SWAGMADDPG(n_states, n_actions, n_agents, args)
+                    model.load_model()
+                    action = model.choose_action(state, noisy=True)
+                    next_state, reward, done, info = env.step(action)
+                    step += 1
+                    total_step += 1
+                    state = next_state
+                    reward = np.array(reward)
+                    import time
+                    time.sleep(0.02)
+                    env.render()
+
+                    accum_reward += np.sum(reward)
+                    adv_epi_reward+=np.sum(reward[0:2])
+                    if args.num_adv > 0:
+                        adv_epi_reward += np.sum(reward[0:args.num_adv])   # XXX: for num_adv=3
+                        agent_epi_reward += reward[-1]
+                    else:
+                        agent_epi_reward += np.sum(reward)
+                    if args.perepisode_length < step or (True in done):
+                        print("[Episode %05d] reward %6.4f " % (episode, accum_reward))
+                        env.reset()
+                        break
 
     else:
 
@@ -316,14 +340,13 @@ if __name__ == '__main__':
     parser.add_argument('--ou_sigma', default=0.2, type=float)
     parser.add_argument('--epsilon_decay', default=10000, type=int)
     parser.add_argument('--tensorboard', default=True, action="store_true")
-    parser.add_argument("--save_interval", default=20000, type=int)
-    parser.add_argument("--model_episode", default=100000, type=int)
+    parser.add_argument("--save_interval", default=50000, type=int)
+    parser.add_argument("--model_episode", default=50000, type=int)
     parser.add_argument('--episode_before_train', default=20, type=int)
     parser.add_argument('--steps_before_train', default=10000, type=int, help="for swagma, start update after this number of steps")
     parser.add_argument("--evaluate_freq", type=int, default=10)
     parser.add_argument("--collect_freq", type=int, default=2)
     parser.add_argument("--sample_freq", type=int, default=100)
-    parser.add_argument("--swag_freq", type=int, default=20)
 
     parser.add_argument('--log_dir', default=datetime.datetime.now().strftime('%m%d_%H%M'))
 
