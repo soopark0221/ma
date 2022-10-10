@@ -141,9 +141,8 @@ class MADDPG:
             target_Q[non_final_mask] = self.critics_target[agent](
                 non_final_next_states.view(-1, self.n_agents * self.n_states), # .view(-1, self.n_agents * self.n_states)
                 non_final_next_actions.view(-1, self.n_agents * self.n_actions)).squeeze() # .view(-1, self.n_agents * self.n_actions)
-
             # scale_reward: to scale reward in Q functions
-            reward_sum = sum([reward_batch[:,agent_idx] for agent_idx in range(self.n_agents)])
+            reward_sum = sum([reward_batch[:, i] for i in range(self.n_agents)])
             target_value = (target_Q.unsqueeze(1) * self.GAMMA) + (
                 reward_batch[:, agent].unsqueeze(1)*scale_reward)# + reward_sum.unsqueeze(1) * 0.1
             loss_Q = nn.MSELoss()(current_Q, target_value.detach())
@@ -176,20 +175,24 @@ class MADDPG:
             c_loss.append(loss_Q)
             a_loss.append(actor_loss)
 
-        if self.train_num % 100 == 0:
-            for i in range(self.n_agents):
-                soft_update(self.critics_target[i], self.critics[i], self.tau)
-                soft_update(self.actors_target[i], self.actors[i], self.tau)
+        #if self.train_num % 100 == 0:
+        for i in range(self.n_agents):
+            soft_update(self.critics_target[i], self.critics[i], self.tau)
+            soft_update(self.actors_target[i], self.actors[i], self.tau)
 
         return sum(c_loss).item()/self.n_agents, sum(a_loss).item()/self.n_agents
 
-    def choose_action(self, state, noisy=True):
+    def choose_action(self, state, noisy=False, explore=True):
         obs = torch.from_numpy(np.stack(state)).float().to(device)
         actions = torch.zeros(self.n_agents, self.n_actions)
         FloatTensor = torch.cuda.FloatTensor if self.use_cuda else torch.FloatTensor
         for i in range(self.n_agents):
             sb = obs[i].detach()
-            act = self.actors[i](sb.unsqueeze(0)).squeeze()
+            act = self.actors[i](sb.unsqueeze(0))
+            if explore:
+                act = gumbel_softmax(act, hard=True).squeeze()
+            else:
+                act = onehot_from_logits(act).squeeze()
             if noisy:
                 act += self.noise_scale* torch.from_numpy(np.random.randn(self.n_actions) * self.var[i]).type(FloatTensor)
 
