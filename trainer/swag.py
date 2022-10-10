@@ -25,7 +25,7 @@ class SWAG:
         return self.mean, variance
 
 
-    def sample(self, scale=0.5, diag_noise=True):
+    def sample(self, update_model, scale=0.5, diag_noise=True):
         mean, variance = self._get_mean_and_variance()
 
         self.cov_factor = self.cov_mat_sqrt.clone() / (self.cov_mat_sqrt.size(0) - 1) ** 0.5  # 1/(sqrt(K-1)) x D : K x n_param
@@ -39,7 +39,7 @@ class SWAG:
         sample = mean + z
 
         # apply to parameters
-        self.set_weights(self.base_model, sample, self.model_device)
+        self.set_weights(update_model, sample, self.model_device)
         return sample
 
 

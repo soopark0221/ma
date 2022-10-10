@@ -13,7 +13,7 @@ from trainer.swag import SWAG
 
 scale_reward = 0.01
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
 def soft_update(target, source, t):
     for target_param, source_param in zip(target.parameters(),
@@ -28,7 +28,7 @@ def hard_update(target, source):
         target_param.data.copy_(source_param.data)
 
 
-class MADDPG:
+class SWAGMADDPG:
     def __init__(self, dim_obs, dim_act, n_agents, args):
         self.args = args
         self.mode = args.mode
@@ -55,11 +55,12 @@ class MADDPG:
         self.noise_scale=0.1
 
         self.var = [1.0 for i in range(n_agents)]
-
+        self.c_lr = args.c_lr
+        self.a_lr = args.a_lr
         self.critic_optimizer = [Adam(x.parameters(),
-                                      args.c_lr) for x in self.critics]
+                                      self.c_lr) for x in self.critics]
         self.actor_optimizer = [Adam(x.parameters(),
-                                     args.a_lr) for x in self.actors]
+                                     self.a_lr) for x in self.actors]
         self.swag_model = [SWAG(ac) for ac in self.actors]
 
         if self.use_cuda:
@@ -71,9 +72,12 @@ class MADDPG:
                 x.cuda()
             for x in self.critics_target:
                 x.cuda()
+            for x in self.actors_sample:
+                x.cuda()
 
         self.steps_done = 0
         self.episode_done = 0
+
 
     def load_model(self):
         if self.args.model_episode:
@@ -88,22 +92,29 @@ class MADDPG:
             if path_flag:
                 print("load model!")
                 for idx in range(self.n_agents):
-                    actor = torch.load("trained_model/maddpg/actor["+ str(idx) + "]_"+str(self.args.model_episode)+".pth")
-                    critic = torch.load("trained_model/maddpg/critic["+ str(idx) + "]_"+str(self.args.model_episode)+".pth")
+                    actor = torch.load(f'trained_model/{str(self.args.algo)}/actor[{str(i)}]_'+str(self.args.model_episode)+".pth")
+                    critic = torch.load(f'trained_model/{str(self.args.algo)}/critic[{str(i)}]_'+str(self.args.model_episode)+".pth")
                     self.actors[idx].load_state_dict(actor.state_dict())
                     self.critics[idx].load_state_dict(critic.state_dict())
-
+            '''
+            for i in range(self.n_agents):
+                a_model = self.actors[i]
+                c_model = self.critics[i]
+                a_model.load_state_dict(torch.load(f'trained_model/{str(self.args.algo)}/actor[{str(i)}]_' + str(episode) + '.pth'))
+                c_model.load_state_dict(torch.load(f'trained_model/{str(self.args.algo)}/critic[{str(i)}]_' + str(episode) + '.pth'))
+            '''
         self.actors_target = deepcopy(self.actors)
         self.critics_target = deepcopy(self.critics)
 
     def save_model(self, episode):
-        if not os.path.exists("./trained_model/" + str(self.args.algo) + "/"):
-            os.mkdir("./trained_model/" + str(self.args.algo) + "/")
+        path = "./trained_model/" + str(self.args.algo) + "/"
+        if not os.path.exists(path):
+            os.makedirs("./trained_model/" + str(self.args.algo) + "/")
         for i in range(self.n_agents):
             torch.save(self.actors[i],
-                       'trained_model/maddpg/actor[' + str(i) + ']' + '_' + str(episode) + '.pth')
+                       f'trained_model/{str(self.args.algo)}/actor[{str(i)}]_' + str(episode) + '.pth')
             torch.save(self.critics[i],
-                       'trained_model/maddpg/critic[' + str(i) + ']' + '_' + str(episode) + '.pth')
+                       f'trained_model/{str(self.args.algo)}/critic[{str(i)}]_' + str(episode) + '.pth')
 
     def update(self,i_episode):
 
@@ -132,7 +143,11 @@ class MADDPG:
             whole_state = state_batch.view(self.batch_size, -1)
             whole_action = action_batch.view(self.batch_size, -1)
 
-    
+            if i_episode % self.args.sample_freq < self.args.sample_freq//3 :
+                self.critic_optimizer[agent].param_groups[0]['lr'] *= 0.97
+                self.actor_optimizer[agent].param_groups[0]['lr'] *= 0.97
+
+
             self.critic_optimizer[agent].zero_grad()
             current_Q = self.critics[agent](whole_state, whole_action)
             non_final_next_actions = [self.actors_target[i](non_final_next_states[:, i,:]) for i in range(self.n_agents)]
@@ -175,6 +190,7 @@ class MADDPG:
             for i in range(self.n_agents):
                 soft_update(self.critics_target[i], self.critics[i], self.tau)
                 soft_update(self.actors_target[i], self.actors[i], self.tau)
+                hard_update(self.actors_sample[i], self.actors[i])
 
         return sum(c_loss).item()/self.n_agents, sum(a_loss).item()/self.n_agents
 
@@ -184,7 +200,7 @@ class MADDPG:
         FloatTensor = torch.cuda.FloatTensor if self.use_cuda else torch.FloatTensor
         for i in range(self.n_agents):
             sb = obs[i].detach()
-            act = self.actors[i](sb.unsqueeze(0)).squeeze()
+            act = self.actors_sample[i](sb.unsqueeze(0)).squeeze()
             if noisy:
                 act += self.noise_scale* torch.from_numpy(np.random.randn(self.n_actions) * self.var[i]).type(FloatTensor)
 
@@ -199,8 +215,12 @@ class MADDPG:
 
     def collect_params(self):
         for agent in range(self.n_agents):
-            self.swag_model[agent].collect_model(self.critics[agent])
+            self.swag_model[agent].collect_model(self.actors[agent])
 
     def sample_params(self):
         for agent in range(self.n_agents):
-            self.swag_model[agent].sample()
+            self.swag_model[agent].sample(self.actors_sample[agent])
+
+    def flatten(self, lst):
+        tmp = [i.contiguous().view(-1,1) for i in lst]
+        return torch.cat(tmp).view(-1)
