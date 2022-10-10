@@ -72,7 +72,8 @@ class Actor_MA(nn.Module):
 	def forward(self,obs):
 		result = F.relu(self.FC1(obs))
 		result = F.relu(self.FC2(result))
-		result = F.tanh(self.FC3(result))
+		#result = F.tanh(self.FC3(result))
+		result = self.FC3(result)
 		return result
 
 class EnsembleCrt_MA(nn.Module):
