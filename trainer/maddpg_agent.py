@@ -8,7 +8,7 @@ from torch.autograd import Variable
 import os
 import torch.nn as nn
 import numpy as np
-from trainer.utils import device, average_gradients, onehot_from_logits, gumbel_softmax
+from trainer.utils import device, average_gradients, onehot_from_logits, gumbel_softmax, to_softmax
 from trainer.swag import SWAG
 
 scale_reward = 0.1
@@ -130,11 +130,12 @@ class MADDPG:
             whole_state = state_batch.view(self.batch_size, -1)
             whole_action = action_batch.view(self.batch_size, -1)
 
-            
             # update critic
             self.critic_optimizer[agent].zero_grad()
             current_Q = self.critics[agent](whole_state, whole_action)
-            non_final_next_actions = [onehot_from_logits(self.actors_target[i](non_final_next_states[:, i,:])) for i in range(self.n_agents)]
+            #non_final_next_actions = [gumbel_softmax(self.actors_target[i](non_final_next_states[:, i,:]), hard=False) for i in range(self.n_agents)]
+            non_final_next_actions = [to_softmax(self.actors_target[i](non_final_next_states[:, i,:])) for i in range(self.n_agents)]
+
             non_final_next_actions = torch.stack(non_final_next_actions)  # agent x batch x dim
             non_final_next_actions = (non_final_next_actions.transpose(0,1).contiguous()) # batch x agent x dim
             target_Q = torch.zeros(self.batch_size).type(FloatTensor)
@@ -142,7 +143,6 @@ class MADDPG:
                 non_final_next_states.view(-1, self.n_agents * self.n_states), # .view(-1, self.n_agents * self.n_states)
                 non_final_next_actions.view(-1, self.n_agents * self.n_actions)).squeeze() # .view(-1, self.n_agents * self.n_actions)
             # scale_reward: to scale reward in Q functions
-            reward_sum = sum([reward_batch[:, i] for i in range(self.n_agents)])
             target_value = (target_Q.unsqueeze(1) * self.GAMMA) + (
                 reward_batch[:, agent].unsqueeze(1)*scale_reward)# + reward_sum.unsqueeze(1) * 0.1
             loss_Q = nn.MSELoss()(current_Q, target_value.detach())
@@ -155,14 +155,17 @@ class MADDPG:
 
             state_i = state_batch[:, agent, :]
             action_i = self.actors[agent](state_i)
-            action_i_vf = gumbel_softmax(action_i, hard=True)
+            action_i_vf = gumbel_softmax(action_i, hard=False)
             ac = action_batch.clone()
+            ac[:, agent, :] = action_i_vf 
+            '''
             for i in range(self.n_agents):
                 if agent == i:
                     ac[:, i, :] = action_i_vf
                 else:
                     state_other = state_batch[:, i, :]
-                    ac[:, i, :] = onehot_from_logits(self.actors[i](state_other))
+                    ac[:, i, :] = self.actors[i](state_other)
+            '''
             whole_action = ac.view(self.batch_size, -1)
 
 
@@ -182,25 +185,18 @@ class MADDPG:
 
         return sum(c_loss).item()/self.n_agents, sum(a_loss).item()/self.n_agents
 
-    def choose_action(self, state, noisy=False, explore=True):
+    def choose_action(self, state, noisy=False, gumbel=True):
         obs = torch.from_numpy(np.stack(state)).float().to(device)
         actions = torch.zeros(self.n_agents, self.n_actions)
         FloatTensor = torch.cuda.FloatTensor if self.use_cuda else torch.FloatTensor
         for i in range(self.n_agents):
             sb = obs[i].detach()
             act = self.actors[i](sb.unsqueeze(0))
-            if explore:
-                act = gumbel_softmax(act, hard=True).squeeze()
+            if gumbel:
+                act = gumbel_softmax(act, hard=False).squeeze()
             else:
                 act = onehot_from_logits(act).squeeze()
-            if noisy:
-                act += self.noise_scale* torch.from_numpy(np.random.randn(self.n_actions) * self.var[i]).type(FloatTensor)
-
-                if self.episode_done > self.episodes_before_train and \
-                        self.var[i] > 0.05:
-                    self.var[i] *= 0.999998
             act = torch.clamp(act, -1.0, 1.0)
-
             actions[i, :] = act
         self.steps_done += 1
         return actions.data.cpu().numpy()
