@@ -8,12 +8,12 @@ from torch.autograd import Variable
 import os
 import torch.nn as nn
 import numpy as np
-from trainer.utils import device
+from trainer.utils import device, average_gradients, onehot_from_logits, gumbel_softmax
 from trainer.swag import SWAG
 
-scale_reward = 0.01
+scale_reward = 0.1
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
 def soft_update(target, source, t):
     for target_param, source_param in zip(target.parameters(),
@@ -120,7 +120,6 @@ class MADDPG:
         batch = Experience(*zip(*transitions))
 
         for agent in range(self.n_agents):
-
             non_final_mask = BoolTensor(list(map(lambda s: s is not None,
                                                  batch.next_states)))
             # state_batch: batch_size x n_agents x dim_obs
@@ -131,12 +130,13 @@ class MADDPG:
             whole_state = state_batch.view(self.batch_size, -1)
             whole_action = action_batch.view(self.batch_size, -1)
 
-    
+            
+            # update critic
             self.critic_optimizer[agent].zero_grad()
             current_Q = self.critics[agent](whole_state, whole_action)
-            non_final_next_actions = [self.actors_target[i](non_final_next_states[:, i,:]) for i in range(self.n_agents)]
-            non_final_next_actions = torch.stack(non_final_next_actions)
-            non_final_next_actions = (non_final_next_actions.transpose(0,1).contiguous())
+            non_final_next_actions = [onehot_from_logits(self.actors_target[i](non_final_next_states[:, i,:])) for i in range(self.n_agents)]
+            non_final_next_actions = torch.stack(non_final_next_actions)  # agent x batch x dim
+            non_final_next_actions = (non_final_next_actions.transpose(0,1).contiguous()) # batch x agent x dim
             target_Q = torch.zeros(self.batch_size).type(FloatTensor)
             target_Q[non_final_mask] = self.critics_target[agent](
                 non_final_next_states.view(-1, self.n_agents * self.n_states), # .view(-1, self.n_agents * self.n_states)
@@ -144,27 +144,33 @@ class MADDPG:
 
             # scale_reward: to scale reward in Q functions
             reward_sum = sum([reward_batch[:,agent_idx] for agent_idx in range(self.n_agents)])
-            target_Q = (target_Q.unsqueeze(1) * self.GAMMA) + (
-                reward_batch[:, agent].unsqueeze(1)*0.01)# + reward_sum.unsqueeze(1) * 0.1
-
-            loss_Q = nn.MSELoss()(current_Q, target_Q.detach())
+            target_value = (target_Q.unsqueeze(1) * self.GAMMA) + (
+                reward_batch[:, agent].unsqueeze(1)*scale_reward)# + reward_sum.unsqueeze(1) * 0.1
+            loss_Q = nn.MSELoss()(current_Q, target_value.detach())
             loss_Q.backward()
-            # torch.nn.utils.clip_grad_norm_(self.critics[agent].parameters(), 1)
+            torch.nn.utils.clip_grad_norm_(self.critics[agent].parameters(), 0.5)
             self.critic_optimizer[agent].step()
-            # print(loss_Q)
 
+            # update actor
             self.actor_optimizer[agent].zero_grad()
 
             state_i = state_batch[:, agent, :]
             action_i = self.actors[agent](state_i)
+            action_i_vf = gumbel_softmax(action_i, hard=True)
             ac = action_batch.clone()
-            ac[:, agent, :] = action_i
+            for i in range(self.n_agents):
+                if agent == i:
+                    ac[:, i, :] = action_i_vf
+                else:
+                    state_other = state_batch[:, i, :]
+                    ac[:, i, :] = onehot_from_logits(self.actors[i](state_other))
             whole_action = ac.view(self.batch_size, -1)
+
+
             actor_loss = -self.critics[agent](whole_state, whole_action).mean()
-            # actor_loss += (action_i ** 2).mean() * 1e-3
+            actor_loss += (action_i ** 2).mean() * 1e-3
             actor_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(self.actors[agent].parameters(), 1)
-            # torch.nn.utils.clip_grad_norm_(self.critics[agent].parameters(), 1)
+            torch.nn.utils.clip_grad_norm_(self.actors[agent].parameters(), 0.5)
             self.actor_optimizer[agent].step()
             # self.critic_optimizer[agent].step()
             c_loss.append(loss_Q)
