@@ -7,3 +7,4 @@ runs/
 *.txt
 *.local
 *.DS_Store
+*.pth
