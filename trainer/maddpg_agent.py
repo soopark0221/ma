@@ -108,7 +108,8 @@ class MADDPG:
         self.train_num = i_episode
         if self.train_num <= self.episodes_before_train:
             return None, None
-
+        if i_episode % 25 != 0 :
+            return None, None
         BoolTensor = torch.cuda.BoolTensor if self.use_cuda else torch.BoolTensor
         FloatTensor = torch.cuda.FloatTensor if self.use_cuda else torch.FloatTensor
 

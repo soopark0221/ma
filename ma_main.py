@@ -174,24 +174,25 @@ def main(args):
                     if args.perepisode_length < step or (True in done):
                         model.prep_training()
                         c_loss, a_loss = model.update(episode)  # XXX: update per episode or step?
-                        print("[Episode %05d] reward %6.4f adv_reward %6.4f agent_reward %6.4f" % (episode, accum_reward, adv_epi_reward, agent_epi_reward))
-                        
-                        if args.tensorboard:
-                            writer.add_scalar(tag='agent/total_reward', global_step=episode, scalar_value=accum_reward)
-                            writer.add_scalar(tag='agent/adv_reward', global_step=episode, scalar_value=adv_epi_reward)
-                            writer.add_scalar(tag='agent/agent_reward', global_step=episode, scalar_value=agent_epi_reward)
-                        
+                        if episode % args.print_interval == 0: 
+                            print("[Episode %05d] reward %6.4f adv_reward %6.4f agent_reward %6.4f" % (episode, accum_reward, adv_epi_reward, agent_epi_reward))
+                            
+                            if args.tensorboard:
+                                writer.add_scalar(tag='agent/total_reward', global_step=episode, scalar_value=accum_reward)
+                                writer.add_scalar(tag='agent/adv_reward', global_step=episode, scalar_value=adv_epi_reward)
+                                writer.add_scalar(tag='agent/agent_reward', global_step=episode, scalar_value=agent_epi_reward)
+                            
+                                if c_loss and a_loss:
+                                    writer.add_scalar('agent/actor_loss', global_step=episode,
+                                                    scalar_value= a_loss)
+                                    writer.add_scalar('agent/critic_loss', global_step=episode,
+                                                    scalar_value= c_loss)  
                             if c_loss and a_loss:
-                                writer.add_scalar('agent/actor_loss', global_step=episode,
-                                                scalar_value= a_loss)
-                                writer.add_scalar('agent/critic_loss', global_step=episode,
-                                                scalar_value= c_loss)  
-                        if c_loss and a_loss:
-                            print(" a_loss %3.4f c_loss %3.4f" % (a_loss, c_loss), end='')
+                                print(" a_loss %3.4f c_loss %3.4f" % (a_loss, c_loss), end='')
 
 
-                        if episode % args.save_interval == 0 and args.mode == "train":
-                            model.save_model(episode)
+                            if episode % args.save_interval == 0 and args.mode == "train":
+                                model.save_model(episode)
 
                         env.reset()
                         # model.reset()
@@ -249,9 +250,10 @@ if __name__ == '__main__':
     parser.add_argument('--ou_sigma', default=0.2, type=float)
     parser.add_argument('--epsilon_decay', default=10000, type=int)
     parser.add_argument('--tensorboard', default=True, action="store_true")
-    parser.add_argument("--save_interval", default=10000, type=int)
+    parser.add_argument("--save_interval", default=100000, type=int)
+    parser.add_argument("--print_interval", default=1000, type=int)
     parser.add_argument("--model_episode", default=100000, type=int)
-    parser.add_argument('--episode_before_train', default=100, type=int)
+    parser.add_argument('--episode_before_train', default=1000, type=int)
     parser.add_argument('--steps_before_train', default=10000, type=int, help="for swagma, start update after this number of steps")
     parser.add_argument("--evaluate_freq", type=int, default=10)
     parser.add_argument("--collect_freq", type=int, default=100)
