@@ -34,7 +34,7 @@ class MADDPG:
         self.mode = args.mode
         self.actors = []
         self.critics = []
-        self.actors = [Actor_MA(dim_obs, dim_act) for _ in range(n_agents)]
+        self.actors = [Actor_MA(dim_obs, dim_act, norm_in=False) for _ in range(n_agents)]
         self.critics = [Critic_MA(n_agents, dim_obs, dim_act) for _ in range(n_agents)]
 
         self.n_agents = n_agents
@@ -105,7 +105,6 @@ class MADDPG:
                        'trained_model/maddpg/critic[' + str(i) + ']' + '_' + str(episode) + '.pth')
 
     def update(self,i_episode):
-
         self.train_num = i_episode
         if self.train_num <= self.episodes_before_train:
             return None, None
@@ -134,10 +133,11 @@ class MADDPG:
             self.critic_optimizer[agent].zero_grad()
             current_Q = self.critics[agent](whole_state, whole_action)
             #non_final_next_actions = [gumbel_softmax(self.actors_target[i](non_final_next_states[:, i,:]), hard=False) for i in range(self.n_agents)]
-            non_final_next_actions = [to_softmax(self.actors_target[i](non_final_next_states[:, i,:])) for i in range(self.n_agents)]
+            non_final_next_actions = [onehot_from_logits(self.actors_target[i](non_final_next_states[:, i,:])) for i in range(self.n_agents)]
 
             non_final_next_actions = torch.stack(non_final_next_actions)  # agent x batch x dim
             non_final_next_actions = (non_final_next_actions.transpose(0,1).contiguous()) # batch x agent x dim
+            
             target_Q = torch.zeros(self.batch_size).type(FloatTensor)
             target_Q[non_final_mask] = self.critics_target[agent](
                 non_final_next_states.view(-1, self.n_agents * self.n_states), # .view(-1, self.n_agents * self.n_states)
@@ -155,7 +155,7 @@ class MADDPG:
 
             state_i = state_batch[:, agent, :]
             action_i = self.actors[agent](state_i)
-            action_i_vf = gumbel_softmax(action_i, hard=False)
+            action_i_vf = gumbel_softmax(action_i, hard=True)
             ac = action_batch.clone()
             ac[:, agent, :] = action_i_vf 
             '''
@@ -193,9 +193,10 @@ class MADDPG:
             sb = obs[i].detach()
             act = self.actors[i](sb.unsqueeze(0))
             if gumbel:
-                act = gumbel_softmax(act, hard=False).squeeze()
+                act = gumbel_softmax(act, hard=True).squeeze()
             else:
                 act = onehot_from_logits(act).squeeze()
+                #act = to_softmax(act).unsqueeze()
             act = torch.clamp(act, -1.0, 1.0)
             actions[i, :] = act
         self.steps_done += 1
@@ -208,3 +209,11 @@ class MADDPG:
     def sample_params(self):
         for agent in range(self.n_agents):
             self.swag_model[agent].sample()
+
+    def prep_training(self):
+        for agent in range(self.n_agents):
+            self.critics[agent].train()
+            self.actors[agent].train()
+            self.critics_target[agent].train()
+            self.actors_target[agent].train()
+        
