@@ -158,10 +158,12 @@ def main(args):
 
                     obs = torch.from_numpy(np.stack(state)).float().to(device)
                     obs_ = torch.from_numpy(np.stack(next_state)).float().to(device)
-                    if step != args.perepisode_length - 1:
-                        next_obs = obs_
-                    else:
-                        next_obs = None
+
+                    next_obs = obs_
+                    #if step != args.perepisode_length - 1:
+                    #    next_obs = obs_
+                    #else:
+                    #    next_obs = None
                     rw_tensor = torch.FloatTensor(reward).to(device)
                     ac_tensor = torch.FloatTensor(action).to(device)
                     

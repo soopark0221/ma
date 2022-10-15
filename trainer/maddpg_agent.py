@@ -120,6 +120,27 @@ class MADDPG:
         batch = Experience(*zip(*transitions))
 
         for agent in range(self.n_agents):
+
+            state_batch = torch.stack(batch.states).type(FloatTensor)
+            action_batch = torch.stack(batch.actions).type(FloatTensor)
+            reward_batch = torch.stack(batch.rewards).type(FloatTensor)
+            next_state_batch = torch.stack(batch.next_states).type(FloatTensor)
+
+            whole_state = state_batch.view(self.batch_size, -1)
+            whole_action = action_batch.view(self.batch_size, -1)
+
+            self.critic_optimizer[agent].zero_grad()
+            current_Q = self.critics[agent](whole_state, whole_action)
+            next_actions = [onehot_from_logits(self.actors_target[i](next_state_batch[:,i,:])) for i in range(self.n_agents)]
+            next_actions = torch.stack(next_actions)  # agent x batch x dim
+            next_actions = (next_actions.permute(1,0,2).contiguous()) # batch x agent x dim
+            target_Q = torch.zeros(self.batch_size).type(FloatTensor)
+            target_Q = self.critics_target[agent](
+                next_state_batch.view(self.batch_size, -1), # .view(-1, self.n_agents * self.n_states)
+                next_actions.view(self.batch_size, -1).squeeze()) # .view(-1, self.n_agents * self.n_actions)
+            target_value = (target_Q * self.GAMMA) + (
+                reward_batch[:, agent].unsqueeze(1)*scale_reward)
+            '''
             non_final_mask = BoolTensor(list(map(lambda s: s is not None,
                                                  batch.next_states)))
             # state_batch: batch_size x n_agents x dim_obs
@@ -146,6 +167,7 @@ class MADDPG:
             # scale_reward: to scale reward in Q functions
             target_value = (target_Q.unsqueeze(1) * self.GAMMA) + (
                 reward_batch[:, agent].unsqueeze(1)*scale_reward)# + reward_sum.unsqueeze(1) * 0.1
+            '''
             loss_Q = nn.MSELoss()(current_Q, target_value.detach())
             loss_Q.backward()
             torch.nn.utils.clip_grad_norm_(self.critics[agent].parameters(), 0.5)
