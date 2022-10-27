@@ -13,6 +13,7 @@ from trainer.normalized_env import ActionNormalizedEnv, ObsEnv, reward_from_stat
 
 from trainer.utils import *
 from copy import deepcopy
+import time
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
@@ -171,11 +172,12 @@ def main(args):
                     obs = next_obs
 
                     state = next_state
-                    
-
+                    if args.display and episode >= 300:
+                        env.render()
                     if args.perepisode_length < step or (True in done):
                         model.prep_training()
                         c_loss, a_loss = model.update(episode)  # XXX: update per episode or step?
+
                         if episode % args.print_interval == 0: 
                             print("[Episode %05d] reward %6.4f adv_reward %6.4f agent_reward %6.4f" % (episode, accum_reward, adv_epi_reward, agent_epi_reward))
                             
@@ -195,7 +197,6 @@ def main(args):
 
                             if episode % args.save_interval == 0 and args.mode == "train":
                                 model.save_model(episode)
-
                         env.reset()
                         # model.reset()
                         break
@@ -237,7 +238,7 @@ if __name__ == '__main__':
     parser.add_argument('--algo', default="bootmaddpg", type=str, help="maddpg/bootmaddpg/swagma")
     parser.add_argument('--mode', default="train", type=str, help="train/eval")
     parser.add_argument('--num_adv', type=int, default=3)
-    parser.add_argument('--perepisode_length', default=25, type=int)
+    parser.add_argument('--perepisode_length', default=100, type=int)
     parser.add_argument('--memory_length', default=int(5*1e5), type=int)
     parser.add_argument('--tau', default=0.01, type=float)
     parser.add_argument('--gamma', default=0.95, type=float)
@@ -261,6 +262,7 @@ if __name__ == '__main__':
     parser.add_argument("--collect_freq", type=int, default=100)
     parser.add_argument("--sample_freq", type=int, default=5000)
     parser.add_argument('--log_dir', default=datetime.datetime.now().strftime('%m%d_%H%M'))
+    parser.add_argument('--display', action="store_true", default=False)
 
     args = parser.parse_args()
     main(args)
