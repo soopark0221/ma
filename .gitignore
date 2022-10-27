@@ -1,0 +1,10 @@
+__pycache__/
+runs/
+model/
+*.cpython-38.pyc
+*.pyc
+*.ubuntu
+*.txt
+*.local
+*.DS_Store
+*.pth

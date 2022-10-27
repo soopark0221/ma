@@ -1,4 +1,5 @@
 import argparse
+from pickle import TRUE
 import torch
 import time
 import os
@@ -12,11 +13,12 @@ from utils.buffer import ReplayBuffer
 from utils.env_wrappers import SubprocVecEnv, DummyVecEnv
 from algorithms.maddpg import MADDPG
 
-USE_CUDA = False  # torch.cuda.is_available()
+USE_CUDA = True if torch.cuda.is_available() else False  # torch.cuda.is_available()
 
 def make_parallel_env(env_id, n_rollout_threads, seed, discrete_action):
     def get_env_fn(rank):
         def init_env():
+            discrete_action=True
             env = make_env(env_id, discrete_action=discrete_action)
             env.seed(seed + rank * 1000)
             np.random.seed(seed + rank * 1000)
@@ -61,10 +63,15 @@ def run(config):
                                   for acsp in env.action_space])
     t = 0
     epi_reward=0
+    adv_reward=0
+
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
         print("After Episode %i, epi_reward= %6.4f" % (ep_i,
                                         epi_reward))
+        print("After Episode %i, adv_reward= %6.4f" % (ep_i,
+                                        adv_reward))
         epi_reward=0
+        adv_reward=0
         obs = env.reset()
         # obs.shape = (n_rollout_threads, nagent)(nobs), nobs differs per agent so not tensor
         maddpg.prep_rollouts(device='cpu')
@@ -81,17 +88,19 @@ def run(config):
             # get actions as torch Variables
             torch_agent_actions = maddpg.step(torch_obs, explore=True)
             # convert actions to numpy arrays
-            agent_actions = [ac.data.numpy() for ac in torch_agent_actions]
+            agent_actions = [ac.data.detach().cpu().numpy() for ac in torch_agent_actions]
             # rearrange actions to be per environment
             actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
             next_obs, rewards, dones, infos = env.step(actions)
-            if (ep_i+1)%400==0:
+            if (ep_i+1)%1==0:
                 import time
                 time.sleep(0.05)
                 env.render()
             replay_buffer.push(obs, agent_actions, rewards, next_obs, dones)
             obs = next_obs
             epi_reward+=np.sum(np.array(rewards))
+            adv_reward+=np.sum(np.array(rewards[0][:3]))
+
             t += config.n_rollout_threads
             if (len(replay_buffer) >= config.batch_size and
                 (t % config.steps_per_update) < config.n_rollout_threads):
@@ -149,8 +158,8 @@ if __name__ == '__main__':
     parser.add_argument("--final_noise_scale", default=0.0, type=float)
     parser.add_argument("--save_interval", default=1000, type=int)
     parser.add_argument("--hidden_dim", default=64, type=int)
-    parser.add_argument("--lr", default=0.01, type=float)
-    parser.add_argument("--tau", default=0.01, type=float)
+    parser.add_argument("--lr", default=7e-4, type=float)
+    parser.add_argument("--tau", default=0.005, type=float)
     parser.add_argument("--agent_alg",
                         default="MADDPG", type=str,
                         choices=['MADDPG', 'DDPG'])
