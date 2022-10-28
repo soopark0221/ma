@@ -1,6 +1,6 @@
 __pycache__/
 runs/
-
+models/
 *.cpython-38.pyc
 *.pyc
 *.ubuntu
@@ -8,3 +8,4 @@ runs/
 *.local
 *.DS_Store
 *.pth
+*.pt
